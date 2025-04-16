@@ -8,24 +8,16 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import time
 import sys
 
-def train_model_with_dataset():
-    print("Starting training process with RAVDESS dataset...")
+def process_ravdess_dataset(data, actor_counts, emotion_counts):
+    """Process the RAVDESS dataset and extract features"""
+    print("Processing RAVDESS dataset...")
     
     # Define the main directory where the dataset is located
     dataset_dir = "Dataset/RAVDESS/"
     
     if not os.path.exists(dataset_dir):
-        print(f"Error: Dataset directory not found at {dataset_dir}")
-        print("Please make sure the RAVDESS dataset is placed in the Dataset/RAVDESS/ directory.")
-        return
-    
-    # Initialize an empty list for storing features and labels
-    data = []
-    actor_counts = {}
-    emotion_counts = {}
-    
-    print("Extracting features from audio files...")
-    start_time = time.time()
+        print(f"Warning: RAVDESS dataset directory not found at {dataset_dir}")
+        return data, actor_counts, emotion_counts
     
     # Loop through all the actors in RAVDESS
     for actor_folder in os.listdir(dataset_dir):
@@ -60,6 +52,94 @@ def train_model_with_dataset():
         
         print(f"  - Processed {actor_file_count} files for {actor_folder}")
     
+    return data, actor_counts, emotion_counts
+
+def process_custom_dataset(data, actor_counts, emotion_counts, dataset_name, dataset_dir):
+    """Process a custom dataset and extract features"""
+    print(f"Processing {dataset_name} dataset...")
+    
+    if not os.path.exists(dataset_dir):
+        print(f"Warning: {dataset_name} dataset directory not found at {dataset_dir}")
+        return data, actor_counts, emotion_counts
+    
+    # Assume the custom dataset follows a structure with emotion folders
+    # Example: Dataset/CUSTOM/angry/file1.wav, Dataset/CUSTOM/happy/file2.wav
+    
+    for emotion_folder in os.listdir(dataset_dir):
+        emotion_folder_path = os.path.join(dataset_dir, emotion_folder)
+        
+        if not os.path.isdir(emotion_folder_path):
+            continue
+            
+        # Map emotion folder names to codes if needed
+        emotion_map = {
+            "neutral": "01",
+            "calm": "02",
+            "happy": "03",
+            "sad": "04",
+            "angry": "05",
+            "fearful": "06",
+            "fear": "06",
+            "disgust": "07",
+            "surprised": "08",
+            "surprise": "08"
+        }
+        
+        emotion_code = emotion_map.get(emotion_folder.lower(), "unknown")
+        if emotion_code == "unknown":
+            print(f"Warning: Unknown emotion folder {emotion_folder}, skipping...")
+            continue
+        
+        print(f"Processing {emotion_folder} files...")
+        file_count = 0
+        
+        for file_name in os.listdir(emotion_folder_path):
+            if file_name.endswith((".wav", ".mp3")):
+                file_path = os.path.join(emotion_folder_path, file_name)
+                
+                # Extract features
+                features = extract_features(file_path)
+                if features is not None:
+                    data.append([features, emotion_code])
+                    
+                    # Update counts - use dataset_name as "actor" for tracking
+                    actor_key = f"{dataset_name}_{emotion_folder}"
+                    actor_counts[actor_key] = actor_counts.get(actor_key, 0) + 1
+                    emotion_counts[emotion_code] = emotion_counts.get(emotion_code, 0) + 1
+                    file_count += 1
+        
+        print(f"  - Processed {file_count} files for {emotion_folder}")
+    
+    return data, actor_counts, emotion_counts
+
+def train_model_with_dataset():
+    print("Starting training process with available datasets...")
+    
+    # Initialize an empty list for storing features and labels
+    data = []
+    actor_counts = {}
+    emotion_counts = {}
+    
+    print("Extracting features from audio files...")
+    start_time = time.time()
+    
+    # Process RAVDESS dataset
+    data, actor_counts, emotion_counts = process_ravdess_dataset(data, actor_counts, emotion_counts)
+    
+    # Process any additional datasets in the Dataset folder
+    dataset_dir = "Dataset"
+    for folder in os.listdir(dataset_dir):
+        folder_path = os.path.join(dataset_dir, folder)
+        
+        # Skip RAVDESS since we already processed it and skip non-directories
+        if folder == "RAVDESS" or not os.path.isdir(folder_path):
+            continue
+        
+        # Process this custom dataset
+        data, actor_counts, emotion_counts = process_custom_dataset(
+            data, actor_counts, emotion_counts, folder, folder_path
+        )
+    
     # Check if we have enough data
     if len(data) == 0:
         print("Error: No valid audio files were processed. Please check the dataset.")
@@ -72,7 +152,7 @@ def train_model_with_dataset():
     # Print dataset statistics
     print("\nDataset Statistics:")
     print(f"Total samples loaded: {len(X)}")
-    print("\nSamples per actor:")
+    print("\nSamples per source:")
     for actor, count in sorted(actor_counts.items()):
         print(f"  - {actor}: {count} files")
     
